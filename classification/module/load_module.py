@@ -165,7 +165,7 @@ def load_scheduler(option, optimizer_list):
     elif option.result['train']['scheduler'] == 'cycle':
         pct_start = 4 / option.result['train']['total_epoch']
         scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer_list[0], max_lr=option.result['train']['lr'], pct_start=pct_start,
-                                                steps_per_epoch=1, epochs=option.result['train']['total_epoch'], anneal_strategy='linear')
+                                                steps_per_epoch=1, epochs=(option.result['train']['total_epoch']+1), anneal_strategy='linear')
     elif option.result['train']['scheduler'] == 'anealing_warmup':
         scheduler_cls = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_list[0], T_max=option.result['train']['total_epoch'])
         scheduler = GradualWarmupScheduler(optimizer_list[0], multiplier=1, total_epoch=int(option.result['train']['total_epoch'] / 20), after_scheduler=scheduler_cls)
