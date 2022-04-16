@@ -157,7 +157,7 @@ def load_optimizer(option, model_list, addon_list):
     optimizer_list = [optim_cls]
     return optimizer_list
 
-def load_scheduler(option, optimizer_list, data_loader):
+def load_scheduler(option, optimizer_list):
     if option.result['train']['scheduler'] == 'step':
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer_list[0], [int(option.result['train']['total_epoch']/3), int(option.result['train']['total_epoch']*2/3)])
     elif option.result['train']['scheduler'] == 'anealing':
@@ -165,7 +165,7 @@ def load_scheduler(option, optimizer_list, data_loader):
     elif option.result['train']['scheduler'] == 'cycle':
         pct_start = 4 / option.result['train']['total_epoch']
         scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer_list[0], max_lr=option.result['train']['lr'], pct_start=pct_start,
-                                                steps_per_epoch=len(data_loader), epochs=option.result['train']['total_epoch'], anneal_strategy='linear')
+                                                steps_per_epoch=1, epochs=option.result['train']['total_epoch'], anneal_strategy='linear')
     elif option.result['train']['scheduler'] == 'anealing_warmup':
         scheduler_cls = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_list[0], T_max=option.result['train']['total_epoch'])
         scheduler = GradualWarmupScheduler(optimizer_list[0], multiplier=1, total_epoch=int(option.result['train']['total_epoch'] / 20), after_scheduler=scheduler_cls)

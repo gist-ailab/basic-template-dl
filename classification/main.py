@@ -189,7 +189,7 @@ def main(rank, option, resume, save_folder, log, master_port):
             optimizer.load_state_dict(save_module.save_dict['optimizer'][ix])
 
     if scheduler_list is not None:
-        scheduler_list = load_scheduler(option, optimizer_list, tr_loader)
+        scheduler_list = load_scheduler(option, optimizer_list)
         
         if resume:
             for ix, scheduler in enumerate(scheduler_list):
