@@ -1,4 +1,6 @@
 {
   "server": "hinton",
-  "save_dir": "/HDD1/sung/checkpoint"
+  "save_dir": "/HDD1/sung/checkpoint",
+  "task": "classification",
+  "mode": "base"
 }

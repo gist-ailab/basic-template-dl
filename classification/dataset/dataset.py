@@ -13,7 +13,6 @@ def load_imagenet(option):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
 
-<<<<<<< HEAD
     if option.result['train']['resize'] is not None:
         resize = option.result['train']['resize']
     else:
@@ -21,23 +20,14 @@ def load_imagenet(option):
 
     tr_transform = transforms.Compose([
         transforms.RandomResizedCrop(resize),
-=======
-    tr_transform = transforms.Compose([
-        transforms.RandomSizedCrop(224),
->>>>>>> 055ceef18e05c3b572609fd4de79fd1d85112930
         transforms.RandomHorizontalFlip(),
         transforms.ToTensor(),
         normalize,
     ])
 
     val_transform = transforms.Compose([
-<<<<<<< HEAD
         transforms.Resize(int(resize * 256 / 224)),
         transforms.CenterCrop(resize),
-=======
-        transforms.Scale(256),
-        transforms.CenterCrop(224),
->>>>>>> 055ceef18e05c3b572609fd4de79fd1d85112930
         transforms.ToTensor(),
         normalize,
     ])

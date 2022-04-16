@@ -331,7 +331,7 @@ if __name__=='__main__':
     else:
         ddp = False
 
-    master_port = str(random.randint(100,10000))
+    master_port = str(random.randint(1,1000))
 
     if ddp:
         mp.spawn(main, args=(option, resume, save_folder, args.log, master_port, ), nprocs=num_gpu, join=True)

@@ -63,21 +63,21 @@ if __name__=='__main__':
     batch_size = 128
 
     # Setup Configuration for Each Experiments
-    if args.exp == 0:
+    if args.exp == -1:
         server = 'lecun'
         save_dir_init = '/home/personal/shin_sungho/checkpoint/data-free'
         data_dir = '/data/sung/dataset'
 
-        exp_name = 'imp'
+        exp_name = 'im100-cls-hyper'
         comb_list = []
-        epoch = 100
+        epoch = 30
 
         train_prop = 1.
         val_prop = 1. 
         
         batch_size = 512
         mixed_precision = True
-        ddp = False
+        ddp = True
         
         num_per_gpu = 1
         
@@ -91,24 +91,77 @@ if __name__=='__main__':
 
         for data in data_type_list:
             for n_t in network_list:
-                for ix in range(2):
-                    target_list = class_list[(100 * ix):(100 *(ix+1))]
-                    data_num = len(target_list)
+                for resize in [64, 128]:
+                    for lr in [0.1, 0.5, 1.0, 1.5, 2.0, 3.0]:
+                        target_list = class_list[0:100]
+                        data_num = len(target_list)
 
-                    comb_list.append({'train': 
-                                            {'lr': 1.2,
-                                            'expand_channels': 0,
-                                            'scheduler': 'cycle',
-                                            'target_list': target_list,
-                                            'pretrained_imagenet': False
-                                            },
-                                    'network': 
-                                            {'network_type': n_t},
-                                    'data':
-                                            {'data_type': data[0],
-                                            'num_class': data_num},
-                                    'index': '%s/%d' %(n_t, ix),
-                                    })
+                        comb_list.append({'train': 
+                                                {'lr': lr,
+                                                'expand_channels': 0,
+                                                'scheduler': 'cycle',
+                                                'target_list': target_list,
+                                                'pretrained_imagenet': False,
+                                                'resize': resize
+                                                },
+                                        'meta': {'task': 'classification',
+                                                'mode': 'hyper-search'},
+                                        'network': 
+                                                {'network_type': n_t},
+                                        'data':
+                                                {'data_type': data[0],
+                                                'num_class': data_num},
+                                        'index': '%s/%d/%d/lr_%.3f' %(n_t, 0, resize, lr),
+                                        })
+
+
+    elif args.exp == 0:
+        server = 'lecun'
+        save_dir_init = '/home/personal/shin_sungho/checkpoint/data-free'
+        data_dir = '/data/sung/dataset'
+
+        exp_name = 'im100-cls'
+        comb_list = []
+        epoch = 90
+
+        train_prop = 1.
+        val_prop = 1. 
+        
+        batch_size = 512
+        mixed_precision = True
+        ddp = True
+        
+        num_per_gpu = 1
+        
+        gpus = ['2,3', '4,5']
+        
+        # Conditional Options
+        network_list = ['resnet50']
+        data_type_list = [('imagenet', 1000)]
+        
+        class_list = sorted(list(range(1000)))
+
+        for data in data_type_list:
+            for n_t in network_list:
+                for resize in [64, 128]:
+                    for ix in range(2):
+                        target_list = class_list[(100 * ix):(100 *(ix+1))]
+                        data_num = len(target_list)
+
+                        comb_list.append({'train': 
+                                                {'lr': 1.2,
+                                                'expand_channels': 0,
+                                                'scheduler': 'cycle',
+                                                'target_list': target_list,
+                                                'pretrained_imagenet': False
+                                                },
+                                        'network': 
+                                                {'network_type': n_t},
+                                        'data':
+                                                {'data_type': data[0],
+                                                'num_class': data_num},
+                                        'index': '%s/%d/%d' %(n_t, ix, resize),
+                                        })
 
     else:
         raise('Select Proper Experiment Number')
