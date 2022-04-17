@@ -98,7 +98,6 @@ if __name__=='__main__':
 
                         comb_list.append({'train': 
                                                 {'lr': lr,
-                                                'expand_channels': 0,
                                                 'scheduler': 'cycle',
                                                 'target_list': target_list,
                                                 'pretrained_imagenet': False,
@@ -133,7 +132,7 @@ if __name__=='__main__':
         
         num_per_gpu = 1
         
-        gpus = ['0,1']
+        gpus = ['0,1', '2,3']
         
         # Conditional Options
         network_list = ['resnet50']
@@ -145,18 +144,29 @@ if __name__=='__main__':
             for n_t in network_list:
                 for resize in [64, 128]:
                     for ix in range(2):
+                        if resize == 64:
+                            lr = 2.0
+                        elif resize == 128:
+                            lr = 1.0
+                        else:
+                            raise('Error')
+
                         target_list = class_list[(100 * ix):(100 *(ix+1))]
                         data_num = len(target_list)
 
                         comb_list.append({'train': 
-                                                {'lr': 1.2,
-                                                'expand_channels': 0,
+                                                {'lr': lr,
                                                 'scheduler': 'cycle',
                                                 'target_list': target_list,
-                                                'pretrained_imagenet': False
+                                                'pretrained_imagenet': False,
+                                                'resize': resize
                                                 },
                                         'network': 
                                                 {'network_type': n_t},
+                                        'meta':
+                                                {"task": "classification",
+                                                 "mode": "base"
+                                                },
                                         'data':
                                                 {'data_type': data[0],
                                                 'num_class': data_num},
