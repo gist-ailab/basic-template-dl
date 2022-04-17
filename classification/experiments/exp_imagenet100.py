@@ -81,7 +81,7 @@ if __name__=='__main__':
         
         num_per_gpu = 1
         
-        gpus = ['2,3', '4,5']
+        gpus = ['0,1', '3,5']
         
         # Conditional Options
         network_list = ['resnet50']
@@ -92,7 +92,7 @@ if __name__=='__main__':
         for data in data_type_list:
             for n_t in network_list:
                 for resize in [64, 128]:
-                    for lr in [0.1, 0.5, 1.0, 1.5, 2.0, 3.0]:
+                    for lr in [0.5, 1.0, 1.3, 1.5, 1.7, 2.0, 2.5, 3.0]:
                         target_list = class_list[0:100]
                         data_num = len(target_list)
 
@@ -133,7 +133,7 @@ if __name__=='__main__':
         
         num_per_gpu = 1
         
-        gpus = ['2,3', '4,5']
+        gpus = ['0,1']
         
         # Conditional Options
         network_list = ['resnet50']

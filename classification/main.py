@@ -211,9 +211,10 @@ def main(rank, option, resume, save_folder, log, master_port):
         
         if scheduler_list is not None:
             for scheduler in scheduler_list:
-                
                 if option.result['train']['scheduler'] == 'anealing':
                     scheduler.step(epoch)
+                elif option.result['train']['scheduler'] == 'cycle':
+                    pass
                 else:
                     scheduler.step()
                     
@@ -231,6 +232,16 @@ def main(rank, option, resume, save_folder, log, master_port):
             for param_group in optimizer_list[0].param_groups:
                 run['debug/current_lr'].log(param_group['lr'])
                 
+
+        # Cyclic Scheduler
+        if scheduler_list is not None:
+            for scheduler in scheduler_list:
+                if option.result['train']['scheduler'] == 'cycle':
+                    scheduler.step()
+                else:
+                    pass                    
+                save_module.save_dict['scheduler'].append(scheduler.state_dict())
+
 
         # Save the last-epoch module
         if (rank == 0) or (rank == 'cuda'):
