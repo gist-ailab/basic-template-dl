@@ -198,7 +198,7 @@ def main(rank, option, resume, save_folder, log, master_port):
     # Run
     lr_list, loss_list = naive_trainer.LRT_train(option, rank, model_list, addon_list, criterion_list, optimizer_list, multi_gpu, tr_loader, val_loader, scaler, run)
     
-    # Plot LR vs Val Loss
+    # TODO: Plot LR vs Val Loss
     lr_list, loss_list = np.array(lr_list), np.array(loss_list)
         
         
@@ -210,8 +210,8 @@ def main(rank, option, resume, save_folder, log, master_port):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--save_dir', type=str, default='/data/sung/checkpoint/norm_corruption/imagenet100_corruption/fog/severe_0/resnet34/')
-    parser.add_argument('--log', type=lambda x: x.lower()=='true', default=False)
+    parser.add_argument('--save_dir', type=str, default='/data/sung/checkpoint/imp/im100-cls-hyper/resnet50/0/64/LRT')
+    parser.add_argument('--log', type=lambda x: x.lower()=='true', default=True)
     args = parser.parse_args()
 
     

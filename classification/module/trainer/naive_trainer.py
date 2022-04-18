@@ -268,9 +268,15 @@ def LRT_train(option, rank, model_list, addon_list, criterion_list, optimizer_li
     lr_list, loss_list = [], []
     min_lr, max_lr = 1e-5, 3
     
+    train_iterator = iter(tr_loader)
+    val_iterator = iter(val_loader)
+    while iters != option.result['train']['end_iters']:
+        try:
+            batch = next(train_iterator)
+        except StopIteration:
+            train_iterator = iter(tr_loader)
+            batch = next(train_iterator)
 
-    while iters == option.result['train']['end_iters']:
-        batch = next(iter(tr_loader))
         model_list[0].train()
         
         # Set LR
@@ -288,13 +294,13 @@ def LRT_train(option, rank, model_list, addon_list, criterion_list, optimizer_li
         optimizer_list[0].zero_grad()
         if scaler is not None:
             with torch.cuda.amp.autocast():
-                output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, iter, rank, criterion_list, train=True, epoch=epoch, multi_gpu=multi_gpu)
+                output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, None, rank, criterion_list, train=True, epoch=iters, multi_gpu=multi_gpu)
                 scaler.scale(loss_cls + loss_channel).backward()
                 scaler.step(optimizer_list[0])
                 scaler.update()
                 
         else:
-            output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, iter, rank, criterion_list, train=True, epoch=epoch, multi_gpu=multi_gpu)
+            output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, None, rank, criterion_list, train=True, epoch=iters, multi_gpu=multi_gpu)
             (loss_cls + loss_channel).backward()
             optimizer_list[0].step()
                 
@@ -315,28 +321,33 @@ def LRT_train(option, rank, model_list, addon_list, criterion_list, optimizer_li
         mean_loss_channel = 0.
         
         model_list[0].eval()
+        
+        try:
+            batch = next(val_iterator)
+        except StopIteration:
+            val_iterator = iter(val_loader)
+            batch = next(val_iterator)
+
         with torch.no_grad():
-            for iter, val_data in enumerate(tqdm(val_loader)):       
-                input, label = val_data
-                input, label = input.to(rank), label.to(rank)
+            input, label = batch
+            input, label = input.to(rank), label.to(rank)
 
-                output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, iter, rank, criterion_list, train=False, epoch=epoch, multi_gpu=multi_gpu)
+            output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, None, rank, criterion_list, train=False, epoch=iters, multi_gpu=multi_gpu)
 
-                if (num_gpu > 1) and (option.result['train']['ddp']):
-                    mean_loss_cls += reduce_tensor(loss_cls.data, num_gpu).item()
-                    mean_loss_channel += reduce_tensor(loss_channel.data, num_gpu).item()
-                else:
-                    mean_loss_cls += loss_cls.item()
-                    mean_loss_channel += loss_channel.item()
+            if (num_gpu > 1) and (option.result['train']['ddp']):
+                mean_loss_cls += reduce_tensor(loss_cls.data, num_gpu).item()
+                mean_loss_channel += reduce_tensor(loss_channel.data, num_gpu).item()
+            else:
+                mean_loss_cls += loss_cls.item()
+                mean_loss_channel += loss_channel.item()
                     
         # Remove Un-neccessary Memory
         del output, loss_cls, loss_channel
         torch.cuda.empty_cache()
         
         # Validation Result
-        mean_loss_cls /= len(val_loader)
-        mean_loss_channel /= len(val_loader)
-        loss_list.append((mean_loss_cls + mean_loss_channel).cpu().detach().items())
+        neptune['debug/val_loss'].log(mean_loss_cls + mean_loss_channel)
+        loss_list.append(mean_loss_cls + mean_loss_channel)
         
         # Update Logger
         if neptune is not None:

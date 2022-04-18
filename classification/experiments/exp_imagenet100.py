@@ -67,23 +67,23 @@ if __name__=='__main__':
         # Large Range Test
         server = 'toast'
         # save_dir_init = '/home/personal/shin_sungho/checkpoint/data-free'
-        save_dir_init = '/data/sung/checkpoint/imp'
+        save_dir_init = '/data/sung/checkpoint/data-free'
         data_dir = '/data/sung/dataset'
 
         exp_name = 'im100-cls-hyper'
         comb_list = []
-        epoch = 30
+        epoch = 100
 
         train_prop = 1.
         val_prop = 1. 
         
-        batch_size = 128
+        batch_size = 512
         mixed_precision = True
         ddp = True
         
         num_per_gpu = 1
         
-        gpus = ['4,5']
+        gpus = ['4,5', '6,7']
         
         # Conditional Options
         network_list = ['resnet50']
@@ -102,8 +102,6 @@ if __name__=='__main__':
                                             'target_list': target_list,
                                             'pretrained_imagenet': False,
                                             'resize': resize,
-                                            "train_prop" : 0.1,
-                                            "val_prop" : 0.1,
                                             "end_iters" : 100
                                             },
                                     'meta': {'task': 'classification',
