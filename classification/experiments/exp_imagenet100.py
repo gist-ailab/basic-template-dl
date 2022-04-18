@@ -63,7 +63,61 @@ if __name__=='__main__':
     batch_size = 128
 
     # Setup Configuration for Each Experiments
-    if args.exp == -1:
+    if args.exp == -2:
+        # Large Range Test
+        server = 'toast'
+        # save_dir_init = '/home/personal/shin_sungho/checkpoint/data-free'
+        save_dir_init = '/data/sung/checkpoint/imp'
+        data_dir = '/data/sung/dataset'
+
+        exp_name = 'im100-cls-hyper'
+        comb_list = []
+        epoch = 30
+
+        train_prop = 1.
+        val_prop = 1. 
+        
+        batch_size = 128
+        mixed_precision = True
+        ddp = True
+        
+        num_per_gpu = 1
+        
+        gpus = ['4,5']
+        
+        # Conditional Options
+        network_list = ['resnet50']
+        data_type_list = [('imagenet', 1000)]
+        
+        class_list = sorted(list(range(1000)))
+
+        for data in data_type_list:
+            for n_t in network_list:
+                for resize in [64, 128, 224, 256]:
+                    target_list = class_list[0:100]
+                    data_num = len(target_list)
+
+                    comb_list.append({'train': 
+                                            {
+                                            'target_list': target_list,
+                                            'pretrained_imagenet': False,
+                                            'resize': resize,
+                                            "train_prop" : 0.1,
+                                            "val_prop" : 0.1,
+                                            "end_iters" : 100
+                                            },
+                                    'meta': {'task': 'classification',
+                                            'mode': 'hyper-search-LRT'},
+                                    'network':
+                                            {'network_type': n_t},
+                                    'data':
+                                            {'data_type': data[0],
+                                            'num_class': data_num},
+                                    'index': '%s/%d/%d/LRT' %(n_t, 0, resize),
+                                    })
+                        
+    elif args.exp == -1:
+        # LR Cycle Hyper Search w/ 1/3 total epochs
         server = 'lecun'
         save_dir_init = '/home/personal/shin_sungho/checkpoint/data-free'
         data_dir = '/data/sung/dataset'
@@ -260,7 +314,10 @@ if __name__=='__main__':
             save_json(json_tune, os.path.join(save_dir, 'tune.json'))
                 
             # Run !
-            script = 'CUDA_VISIBLE_DEVICES=%s python ../main.py --save_dir %s --log %s' %(str(gpu), save_dir, log)
+            if 'LRT' in json_meta['mode']:
+                script = 'CUDA_VISIBLE_DEVICES=%s python ../main_LRT.py --save_dir %s --log %s' %(str(gpu), save_dir, log)
+            else:
+                script = 'CUDA_VISIBLE_DEVICES=%s python ../main.py --save_dir %s --log %s' %(str(gpu), save_dir, log)
             subprocess.call(script, shell=True)
 
 

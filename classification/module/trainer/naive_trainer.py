@@ -75,7 +75,6 @@ def forward_single(option, input, label, model_list, addon_list, iter, rank, cri
     output = model_list[0](input)
     loss_cls = criterion_list[0](output, label)
     loss_channel = torch.tensor(0.).to(rank)
-        
     return output, loss_cls, loss_channel
 
 
@@ -253,3 +252,109 @@ def validation(option, rank, epoch, model_list, addon_list, criterion_list, mult
         tune.report(loss=(mean_loss_cls + mean_loss_channel), accuracy=mean_acc1)
 
     return result
+
+
+## RLT modules
+def LRT_train(option, rank, model_list, addon_list, criterion_list, optimizer_list, multi_gpu, tr_loader, val_loader, scaler, neptune=None):
+    # GPU setup
+    num_gpu = len(option.result['train']['gpu'].split(','))
+
+    # For Log
+    mean_loss_cls = 0.
+    mean_loss_channel = 0.
+
+    # Run
+    iters = 0
+    lr_list, loss_list = [], []
+    min_lr, max_lr = 1e-5, 3
+    
+
+    while iters == option.result['train']['end_iters']:
+        batch = next(iter(tr_loader))
+        model_list[0].train()
+        
+        # Set LR
+        r =  iters / (option.result['train']['end_iters'] - 1)
+        lr = min_lr * (max_lr / min_lr) ** r
+        
+        for param_group in optimizer_list[0].param_groups:
+            param_group['lr'] = lr
+        lr_list.append(lr)            
+        
+        # Train for Single Iter
+        input, label = batch
+        input, label = input.to(rank), label.to(rank)
+
+        optimizer_list[0].zero_grad()
+        if scaler is not None:
+            with torch.cuda.amp.autocast():
+                output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, iter, rank, criterion_list, train=True, epoch=epoch, multi_gpu=multi_gpu)
+                scaler.scale(loss_cls + loss_channel).backward()
+                scaler.step(optimizer_list[0])
+                scaler.update()
+                
+        else:
+            output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, iter, rank, criterion_list, train=True, epoch=epoch, multi_gpu=multi_gpu)
+            (loss_cls + loss_channel).backward()
+            optimizer_list[0].step()
+                
+        # Empty Un-necessary Memory
+        torch.cuda.empty_cache()
+        
+        if (num_gpu > 1) and (option.result['train']['ddp']):
+            mean_loss_cls += reduce_tensor(loss_cls.data, num_gpu).item()
+            mean_loss_channel += reduce_tensor(loss_channel.data, num_gpu).item()
+        else:
+            mean_loss_cls += loss_cls.item()
+            mean_loss_channel += loss_channel.item()
+        del output, loss_cls, loss_channel
+
+
+        # Validation
+        mean_loss_cls = 0.
+        mean_loss_channel = 0.
+        
+        model_list[0].eval()
+        with torch.no_grad():
+            for iter, val_data in enumerate(tqdm(val_loader)):       
+                input, label = val_data
+                input, label = input.to(rank), label.to(rank)
+
+                output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, iter, rank, criterion_list, train=False, epoch=epoch, multi_gpu=multi_gpu)
+
+                if (num_gpu > 1) and (option.result['train']['ddp']):
+                    mean_loss_cls += reduce_tensor(loss_cls.data, num_gpu).item()
+                    mean_loss_channel += reduce_tensor(loss_channel.data, num_gpu).item()
+                else:
+                    mean_loss_cls += loss_cls.item()
+                    mean_loss_channel += loss_channel.item()
+                    
+        # Remove Un-neccessary Memory
+        del output, loss_cls, loss_channel
+        torch.cuda.empty_cache()
+        
+        # Validation Result
+        mean_loss_cls /= len(val_loader)
+        mean_loss_channel /= len(val_loader)
+        loss_list.append((mean_loss_cls + mean_loss_channel).cpu().detach().items())
+        
+        # Update Logger
+        if neptune is not None:
+            neptune['debug/current_step'].log(iters)
+            for param_group in optimizer_list[0].param_groups:
+                neptune['debug/current_lr'].log(param_group['lr'])
+                
+        # Update Iters
+        iters += 1
+
+        # Finish Iters
+        if multi_gpu and (option.result['train']['ddp']) and not option.result['tune']['tuning']:
+            dist.barrier()
+
+    return lr_list, loss_list
+
+
+
+
+
+
