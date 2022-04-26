@@ -93,7 +93,7 @@ if __name__=='__main__':
 
         for data in data_type_list:
             for n_t in network_list:
-                for resize in [224, 256]:
+                for resize in [32]:
                     for lr in [0.5, 1.0, 1.3, 1.5, 1.7, 2.0, 2.5, 3.0]:
                         target_list = class_list[0:100]
                         data_num = len(target_list)
