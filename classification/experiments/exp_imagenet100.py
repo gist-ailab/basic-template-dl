@@ -117,13 +117,15 @@ if __name__=='__main__':
 
 
     elif args.exp == 0:
-        server = 'lecun'
-        save_dir_init = '/home/personal/shin_sungho/checkpoint/data-free'
-        data_dir = '/data/sung/dataset'
+        server = 'nipa'
+        # save_dir_init = '/home/personal/shin_sungho/checkpoint/data-free'
+        save_dir_init = '/home/sung/checkpoint'
+        data_dir = '/home/sung/dataset'
 
-        exp_name = 'im100-cls'
+        # exp_name = 'im100-cls'
+        exp_name = 'imp'
         comb_list = []
-        epoch = 90
+        epoch = 30
 
         train_prop = 1.
         val_prop = 1. 
@@ -134,7 +136,7 @@ if __name__=='__main__':
         
         num_per_gpu = 1
         
-        gpus = ['0,1', '2,3']
+        gpus = ['0,1']
         
         # Conditional Options
         network_list = ['resnet50']
@@ -144,15 +146,9 @@ if __name__=='__main__':
 
         for data in data_type_list:
             for n_t in network_list:
-                for resize in [64, 128]:
+                for resize in [32]:
                     for ix in range(2):
-                        if resize == 64:
-                            lr = 2.0
-                        elif resize == 128:
-                            lr = 1.0
-                        else:
-                            raise('Error')
-
+                        lr = 0.1
                         target_list = class_list[(100 * ix):(100 *(ix+1))]
                         data_num = len(target_list)
 
