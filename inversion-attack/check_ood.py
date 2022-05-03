@@ -13,8 +13,6 @@ from copy import deepcopy
 from timm import create_model
 
 
-
-
 def entropy(preds, use_softmax=True):
     if use_softmax:
         preds = torch.nn.Softmax(dim=-1)(preds)
@@ -42,6 +40,8 @@ if __name__=='__main__':
     device = torch.device('cuda:5')
     data_root = '/data/sung/dataset/imagenet'
     batch_size = 128
+    osr_method = 'entropy'
+    
         
     # Dataset
     val_dataset = load_data(data_root=data_root, data_type='val')
@@ -67,6 +67,8 @@ if __name__=='__main__':
     classifier_1 = classifier_1.to(device)
     classifier_1 = classifier_1.eval()
     
+    
+    # Result
     correct_0, correct_1, wrong_0, wrong_1 = 0., 0., 0., 0.
     total = 0.
     for img, label in tqdm(val_loader_0):
@@ -76,10 +78,20 @@ if __name__=='__main__':
             output_0 = classifier_0(img)
             output_1 = classifier_1(img)
         
-        
-        out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
-        out_osr = ((entropy(output_0) - entropy(output_1)) > 0.).long()
-
+        if osr_method == 'entropy':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+            out_osr = ((entropy(output_0) - entropy(output_1)) > 0.).long()
+        elif osr_method == 'msp':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+        elif osr_method == 'msl':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+        elif osr_method == 'msp_norm':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+        elif osr_method == 'msl_norm':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+        else:
+            raise('Select Proper OSR Method')
+            
         ID_pred_result = torch.max(output_0, dim=1)[1] == label
         
         correct_0 += len(ID_pred_result[out_osr == 0]) - torch.sum(ID_pred_result[out_osr == 0])
@@ -101,9 +113,20 @@ if __name__=='__main__':
             output_0 = classifier_0(img)
             output_1 = classifier_1(img)
         
-        
-        out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
-        out_osr = ((entropy(output_0) - entropy(output_1)) > 0.).long()
+        if osr_method == 'entropy':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+            out_osr = ((entropy(output_0) - entropy(output_1)) > 0.).long()
+        elif osr_method == 'msp':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+        elif osr_method == 'msl':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+        elif osr_method == 'msp_norm':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+        elif osr_method == 'msl_norm':
+            out_pred = torch.cat([torch.max(output_0, dim=1)[1].view(-1,1), 100 + torch.max(output_1, dim=1)[1].view(-1,1)], dim=1)
+        else:
+            raise('Select Proper OSR Method')
+            
 
         ID_pred_result = torch.max(output_1, dim=1)[1] == label
         

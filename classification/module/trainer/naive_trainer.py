@@ -112,7 +112,14 @@ def train(option, rank, epoch, model_list, addon_list, criterion_list, optimizer
             output, loss_cls, loss_channel = forward_single(option, input, label, model_list, addon_list, iter, rank, criterion_list, train=True, epoch=epoch, multi_gpu=multi_gpu)
             (loss_cls + loss_channel).backward()
             optimizer_list[0].step()
-                
+        
+        # If NaN -> Break!
+        if not torch.isfinite(loss_cls):
+            print('Break because of NaN loss')
+            return 0
+        else:
+            pass     
+        
         # Empty Un-necessary Memory
         torch.cuda.empty_cache()
         

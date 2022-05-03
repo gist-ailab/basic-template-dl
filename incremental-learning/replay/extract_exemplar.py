@@ -1,6 +1,5 @@
 import json
 import numpy as np
-import pickle
 import argparse
 import os
 import neptune.new as neptune
@@ -12,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from module.trainer import naive_trainer
+from module.trainer import init_trainer
 from module.load_module import load_model, load_loss, load_optimizer, load_scheduler
 from utility.utils import config, train_module
 from utility.earlystop import EarlyStopping
@@ -35,13 +34,16 @@ def setup(rank, world_size, master_port):
     # initialize the process group
     dist.init_process_group(backend="nccl", rank=rank, world_size=world_size)
 
+
 def cleanup():
     dist.destroy_process_group()
+
 
 def main(rank, option, resume, save_folder, log, master_port):
     # Basic Options
     resume_path = os.path.join(save_folder, 'last_dict.pt')
     total_epoch = option.result['train']['total_epoch']
+
 
     # GPU Configuration
     num_gpu = len(option.result['train']['gpu'].split(','))
@@ -51,7 +53,6 @@ def main(rank, option, resume, save_folder, log, master_port):
     else:
         ddp = False
 
-    scheduler_list = option.result['train']['scheduler']
     batch_size, pin_memory = option.result['train']['batch_size'], option.result['train']['pin_memory']
 
     # Logger
@@ -88,25 +89,18 @@ def main(rank, option, resume, save_folder, log, master_port):
     else:
         run = None
 
+
     # Load Model
-    model_list, addon_list = load_model(option)
-    
-    criterion_list = load_loss(option)
-    save_module = train_module(total_epoch, criterion_list, multi_gpu)
+    model = load_model(option)
+    criterion = load_loss(option)
+    save_module = train_module(total_epoch, criterion, multi_gpu)
 
     if resume:
         save_module.import_module(resume_path)
         
         # Load Model
-        for ix, model in enumerate(model_list):
-            model.load_state_dict(save_module.save_dict['model'][ix])
+        model.load_state_dict(save_module.save_dict['model'])
 
-        # Load Add-on
-        for ix, addon in enumerate(addon_list):
-            if ix == 1:
-                for id, (_, _, _, attn) in enumerate(addon):
-                    attn.load_state_dict(save_module.save_dict['addon'][ix][id])
-        
         # Load Epoch
         if save_module.save_dict['save_epoch'] == (int(option.result['train']['total_epoch']) - 1):
             return None
@@ -118,29 +112,17 @@ def main(rank, option, resume, save_folder, log, master_port):
         torch.manual_seed(0)
         torch.cuda.set_device(rank)
 
-        for ix in range(len(model_list)):
-            model_list[ix].to(rank)
-            model_list[ix] = DDP(model_list[ix], device_ids=[rank])
-            model_list[ix] = apply_gradient_allreduce(model_list[ix])
+        model.to(rank)
+        model = DDP(model, device_ids=[rank])
+        model = apply_gradient_allreduce(model)
 
-        for ix in range(len(addon_list)):
-            addon_list[ix] = addon_list[ix].to(rank)
-        
-        for ix in range(len(criterion_list)):
-            criterion_list[ix].to(rank)
+        criterion.to(rank)
 
     else:
-        for ix in range(len(model_list)):
-            if multi_gpu:
-                model_list[ix] = nn.DataParallel(model_list[ix]).to(rank)
-            else:
-                model_list[ix] = model_list[ix].to(rank)
-            
-        for ix in range(len(addon_list)):
-            if multi_gpu:
-                addon_list[ix] = nn.DataParallel(addon_list[ix]).to(rank)
-            else:
-                addon_list[ix] = addon_list[ix].to(rank)
+        if multi_gpu:
+            model = nn.DataParallel(model).to(rank)
+        else:
+            model = model.to(rank)
             
 
     # Early Stopping
@@ -157,9 +139,28 @@ def main(rank, option, resume, save_folder, log, master_port):
         target_list = list(range(0, option.result['data']['num_class']))
     else:
         target_list = option.result['train']['target_list']
+        
+        
+    # TODO: Add Whole List for Total Validation
+    whole_list = list(map(int, option.result['train']['whole_class_list'].split(',')))
+    
 
-    tr_dataset = IncrementalSet(tr_dataset, target_list=target_list, shuffle_label=True, prop=option.result['train']['train_prop'])
-    val_dataset = IncrementalSet(val_dataset, target_list=target_list, shuffle_label=False, prop=option.result['train']['val_prop'])
+    # TODO: Load Exemplar
+    if option.result['train']['num_exemplar'] > 0 and option.result['train']['current_task'] > 0:
+        exemplar_list = []
+    else:
+        exemplar_list = []
+    
+    
+    # Start Class for New-task
+    if multi_gpu:
+        start = model.module.old_class_tot
+    else:
+        start = model.old_class_tot
+    
+    tr_dataset = IncrementalSet(tr_dataset,  exemplar_list=exemplar_list, start=start, target_list=target_list, shuffle_label=True, prop=option.result['train']['train_prop'])
+    val_dataset = IncrementalSet(val_dataset, exemplar_list=[], start=start, target_list=whole_list, shuffle_label=False, prop=option.result['train']['val_prop'])
+
 
     # Data Loader
     if ddp:
@@ -181,19 +182,19 @@ def main(rank, option, resume, save_folder, log, master_port):
 
 
     # Optimizer and Scheduler
-    optimizer_list = load_optimizer(option, model_list, addon_list)
+    optimizer = load_optimizer(option, model)
     
     if resume:
         # Load Optimizer
-        for ix, optimizer in enumerate(optimizer_list):
-            optimizer.load_state_dict(save_module.save_dict['optimizer'][ix])
+        optimizer.load_state_dict(save_module.save_dict['optimizer'])
 
-    if scheduler_list is not None:
-        scheduler_list = load_scheduler(option, optimizer_list)
+    if option.result['train']['scheduler'] is not None:
+        scheduler = load_scheduler(option, optimizer)
         
         if resume:
-            for ix, scheduler in enumerate(scheduler_list):
-                scheduler.load_state_dict(save_module.save_dict['scheduler'][ix])
+            scheduler.load_state_dict(save_module.save_dict['scheduler'])
+    else:
+        scheduler = None
 
 
     # Mixed Precision
@@ -205,48 +206,41 @@ def main(rank, option, resume, save_folder, log, master_port):
     
     
     # Run
-    for epoch in range(save_module.init_epoch, save_module.total_epoch):        
+    for epoch in range(save_module.init_epoch, save_module.total_epoch):
         # Scheduler with Warm-up
-        save_module.save_dict['scheduler'] = []
-        
-        if scheduler_list is not None:
-            for scheduler in scheduler_list:
-                if option.result['train']['scheduler'] == 'anealing':
-                    scheduler.step(epoch)
-                elif option.result['train']['scheduler'] == 'cycle':
-                    pass
-                else:
-                    scheduler.step()
+        if scheduler is not None:
+            if option.result['train']['scheduler'] == 'anealing':
+                scheduler.step(epoch)
+            elif option.result['train']['scheduler'] == 'cycle':
+                pass
+            else:
+                scheduler.step()
                     
-                save_module.save_dict['scheduler'].append(scheduler.state_dict())
+            save_module.save_dict['scheduler'] = scheduler.state_dict()
+
 
         # Train
-        save_module = naive_trainer.train(option, rank, epoch, model_list, addon_list, criterion_list, optimizer_list, multi_gpu, \
-                                                                        tr_loader, scaler, save_module, run, save_folder)
+        save_module = init_trainer.train(option, rank, epoch, model, criterion, optimizer, multi_gpu, \
+                                          tr_loader, scaler, save_module, run, save_folder)
         
-        if save_module == 0:
-            result = None
-            break
-        else:
-            pass
         
         # Evaluation
-        result = naive_trainer.validation(option, rank, epoch, model_list, addon_list, criterion_list, multi_gpu, val_loader, scaler, run)
+        result = init_trainer.validation(option, rank, epoch, model, criterion, multi_gpu, val_loader, scaler, run)
+            
             
         # Log Learning Rate
         if run is not None:
-            for param_group in optimizer_list[0].param_groups:
+            for param_group in optimizer.param_groups:
                 run['debug/current_lr'].log(param_group['lr'])
                 
 
         # Cyclic Scheduler
-        if scheduler_list is not None:
-            for scheduler in scheduler_list:
-                if option.result['train']['scheduler'] == 'cycle':
-                    scheduler.step()
-                else:
-                    pass                    
-                save_module.save_dict['scheduler'].append(scheduler.state_dict())
+        if scheduler is not None:
+            if option.result['train']['scheduler'] == 'cycle':
+                scheduler.step()
+            else:
+                pass                    
+            save_module.save_dict['scheduler'] = scheduler.state_dict()
 
 
         # Save the last-epoch module
@@ -258,25 +252,22 @@ def main(rank, option, resume, save_folder, log, master_port):
             option.export_config(save_config_path)
 
 
+        # Early Stopping
         if result is not None:
-            # Early Stopping
-            param_list = []
             if multi_gpu:
-                for model in model_list:
-                    param_list.append(deepcopy(model.module.state_dict()))
+                current_model = deepcopy(model.module.state_dict())
             else:
-                for model in model_list:
-                    param_list.append(deepcopy(model.state_dict()))
+                current_model = deepcopy(model.state_dict())
 
             if option.result['train']['early_loss']:
-                early(result['val_loss'], param_list, result)
+                early(result['val_loss'], current_model, result)
             else:
-                early(-result['acc1'], param_list, result)
+                early(-result['acc1'], current_model, result)
 
             if early.early_stop == True:
                 break
         
-    
+
     # Save Best Model
     if result is not None:
         if (rank == 0) or (rank == 'cuda'):
@@ -285,12 +276,22 @@ def main(rank, option, resume, save_folder, log, master_port):
     if ddp:
         cleanup()
 
+
+    # TODO: Select and Update Exemplar for New Task
+    if option.result['train']['num_exemplar'] > 0:
+        if multi_gpu:
+            exemplar_list = model
+        else:
+            exemplar_list = model
+
+        np.save(exemplar_list, os.path.join(save_folder, 'exemplar.npy'))
+
     return None
 
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--save_dir', type=str, default='/data/sung/checkpoint/imp/im100-cls-hyper/resnet50/0/64/LRT')
+    parser.add_argument('--save_dir', type=str, default='/data/sung/checkpoint')
     parser.add_argument('--log', type=lambda x: x.lower()=='true', default=False)
     args = parser.parse_args()
 
@@ -304,24 +305,21 @@ if __name__=='__main__':
     option.get_config_network()
     option.get_config_train()
     option.get_config_meta()
-    option.get_config_tune()
 
     option.result['train']['save_folder'] = save_folder
-    option.result['train']['task'] = 'scale_robust'
+    option.result['train']['task'] = 'incremental-learning'
+
 
     # Resume Configuration
     resume = option.result['train']['resume']
     resume_path = os.path.join(save_folder, 'last_dict.pt')
     config_path = os.path.join(save_folder, 'last_config.json')
 
+
     # BASE FOLDER
     option.result['train']['base_folder'] = str(pathlib.Path(__file__).parent.resolve())
 
-    # Target Class
-    if option.result['train']['target_list'] is not None:
-        option.result['data']['num_class'] = len(option.result['train']['target_list'])
-    
-    
+
     # Resume
     if resume:
         if (os.path.isfile(resume_path) == False) or (os.path.isfile(config_path) == False):
@@ -334,9 +332,15 @@ if __name__=='__main__':
 
             option.result['train']['gpu'] = gpu
 
+
     # Data Directory
     if not resume:
         option.result['data']['data_dir'] = os.path.join(option.result['data']['data_dir'], option.result['data']['data_type'])
+
+
+    # Num Class
+    option.result['data']['num_class'] = option.result['train']['num_init_class'] + (option.result['train']['num_new_class'] * option.result['train']['current_task'])
+
 
     # GPU
     num_gpu = len(option.result['train']['gpu'].split(','))
@@ -349,6 +353,7 @@ if __name__=='__main__':
         ddp = False
 
     master_port = str(random.randint(1,1000))
+
 
     if ddp:
         mp.spawn(main, args=(option, resume, save_folder, args.log, master_port, ), nprocs=num_gpu, join=True)

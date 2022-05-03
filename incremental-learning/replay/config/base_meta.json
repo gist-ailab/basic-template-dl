@@ -1,0 +1,6 @@
+{
+  "server": "hinton",
+  "save_dir": "/HDD1/sung/checkpoint",
+  "task": "incremental-learning",
+  "mode": "base"
+}
