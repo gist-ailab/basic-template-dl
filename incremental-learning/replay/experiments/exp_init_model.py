@@ -13,6 +13,8 @@ import argparse
 import warnings
 warnings.filterwarnings('ignore')
 
+import random
+
 def load_json(json_path):
     with open(json_path, 'r') as f:
         out = json.load(f)
@@ -53,118 +55,183 @@ if __name__=='__main__':
     log = True
     batch_size = 128
 
-    ################################## CFAR100-B50 ###############################
-    # 1. Init - Hypersearch
+    ################################## CFAR100-B50 / B10 ###############################
+    # 1. Init - Cifar100
     if args.exp == 1:
-        # LR Cycle Hyper Search w/ 1/3 total epochs
         server = 'toast'
-        save_dir_init = '/data/sung/checkpoint/inclearn/cifar100_B50/'
+        save_dir_init = '/data/sung/checkpoint/inclearn/'
         data_dir = '/data/sung/dataset'
 
+        epoch = 170
+
+        train_prop = 1.
+        val_prop = 1. 
+        
+        batch_size = 128
+        mixed_precision = False
+        ddp = False
+        
+        gpus = ['0', '1', '2', '3', '4', '5']
+        num_per_gpu = 1
+        
+        
+        # Conditional Options
+        network_list = ['resnet18']
+        data = ('cifar100', 100)
+
         comb_list = []
-        epoch = 30
+        for n_t in network_list:
+            for init_class in [5, 10, 20, 50]:
+                for seed in [11, 64, 148]:
+                    class_list = list(range(100))
+                    random.seed(seed)  # Ensure that following order is determined by seed:
+                    random.shuffle(class_list)
+                    
+                    comb_list.append({'train':
+                                            {'lr': 0.1,
+                                            'optimizer': 'sgd',
+                                            'scheduler': 'step_warmup',
+                                            'weight_decay': 0.0005,
+                                            'step_milestones': [110, 130],
+                                            'step_gamma': 0.1,
+                                            'warmup_epoch': 10,
+                                            
+                                            'init': True,
+                                            'total_task': -1,
+                                            
+                                            'class_list': class_list,
+                                            "num_init_class": init_class,
+                                            "num_new_class": init_class
+                                            },
+                                    'meta': {'task': 'init_cifar100_B%d_seed%d' %(init_class, seed),
+                                            'mode': 'incremental-learning'},
+                                    'network': 
+                                            {'extractor_type': n_t},
+                                    'data':
+                                            {'data_type': data[0],
+                                            'num_class': data[1],
+                                            'seed': seed},
+                                    'index': 'init/cifar100_B%d/%s_fc/seed%d' %(init_class, n_t, seed),
+                                    })
+
+
+    # 2. Init - ImageNet100
+    elif args.exp == 2:
+        server = 'toast'
+        save_dir_init = '/data/sung/checkpoint/inclearn/'
+        data_dir = '/data/sung/dataset'
+
+        epoch = 130
 
         train_prop = 1.
         val_prop = 1. 
         
         batch_size = 256
-        mixed_precision = True
+        mixed_precision = False
         ddp = False
         
+        gpus = ['4', '5', '6', '7']
         num_per_gpu = 1
         
-        gpus = ['0', '1', '2', '5']
         
         # Conditional Options
-        network_list = ['resnet34']
-        data_type_list = [('cifar100', 100)]
-        class_list = sorted(list(range(100)))
+        network_list = ['resnet18']
+        data = ('imagenet100', 100)
 
-        for data in data_type_list:
-            for n_t in network_list:
-                for lr in [0.1, 0.3, 0.5, 1.0, 1.3, 1.5, 1.7, 2.0]:
-                    target_list = class_list[0:50]
-                    whole_class_list = target_list
-                    data_num = len(target_list)
-
+        comb_list = []
+        for n_t in network_list:
+            for init_class in [10, 50]:
+                for seed in [11, 64, 148]:
+                    class_list = list(range(100))
+                    random.seed(seed)  # Ensure that following order is determined by seed:
+                    random.shuffle(class_list)
+                    
                     comb_list.append({'train':
-                                            {'lr': lr,
-                                            'scheduler': 'cycle',
-                                            'target_list': target_list,
-                                            'whole_class_list': whole_class_list,
-                                            "current_task": 0,
-                                            "num_init_class": 50,
-                                            "num_new_class": 10,
+                                            {'lr': 0.1,
+                                            'optimizer': 'sgd',
+                                            'scheduler': 'step_warmup',
+                                            'weight_decay': 0.0005,
+                                            'step_milestones': [40, 70, 90, 100],
+                                            'step_gamma': 0.1,
+                                            'warmup_epoch': 10,
+                                            
+                                            'init': True,
+                                            'total_task': -1,
+                                            
+                                            'class_list': class_list,
+                                            "num_init_class": init_class,
+                                            "num_new_class": init_class
                                             },
-                                    'meta': {'task': 'init_cifar100_B50',
-                                            'mode': 'hyper-search'},
+                                    'meta': {'task': 'init_imagenet100_B%d_seed%d' %(init_class, seed),
+                                            'mode': 'incremental-learning'},
                                     'network': 
                                             {'extractor_type': n_t},
                                     'data':
                                             {'data_type': data[0],
-                                            'num_class': data_num},
-                                    'index': '%s_ori/hyper-search/lr_%.3f' %(n_t, lr),
+                                            'num_class': data[1],
+                                            'seed': seed},
+                                    'index': 'init/imagenet100_B%d/%s_fc/seed%d' %(init_class, n_t, seed),
                                     })
 
 
-    elif args.exp == 2:
-        # LR Cycle Hyper Search w/ 1/3 total epochs
+    # 3. Init - ImageNet1000
+    elif args.exp == 3:
         server = 'toast'
-        save_dir_init = '/data/sung/checkpoint/inclearn/imagenet_B500'
+        save_dir_init = '/data/sung/checkpoint/inclearn/'
         data_dir = '/data/sung/dataset'
 
-        comb_list = []
-        epoch = 30
+        epoch = 100
 
         train_prop = 1.
         val_prop = 1. 
         
-        batch_size = 512
-        mixed_precision = True
+        batch_size = 256
+        mixed_precision = False
         ddp = True
         
+        gpus = ['4,5', '6,7']
         num_per_gpu = 1
         
-        gpus = ['6,7']
         
         # Conditional Options
-        network_list = ['resnet34']
-        data_type_list = [('imagenet', 1000)]
-        class_list = sorted(list(range(1000)))
+        network_list = ['resnet18']
+        data = ('imagenet', 1000)
 
-        for data in data_type_list:
-            for n_t in network_list:
-                for lr in [0.5, 1.0, 1.3, 1.5, 1.7, 2.0, 2.3, 2.5]:
-                    target_list = class_list[0:500]
-                    whole_class_list = target_list
-                    data_num = len(target_list)
-
+        comb_list = []
+        for n_t in network_list:
+            for init_class in [100, 500, 800]:
+                for seed in [11, 64, 148]:
+                    class_list = list(range(1000))
+                    random.seed(seed)  # Ensure that following order is determined by seed:
+                    random.shuffle(class_list)
+                    
                     comb_list.append({'train':
-                                            {'lr': lr,
-                                            'scheduler': 'cycle',
-                                            'target_list': target_list,
-                                            'whole_class_list': whole_class_list,
-                                            "current_task": 0,
-                                            "num_init_class": 500,
-                                            "num_new_class": 100,
+                                            {'lr': 0.2,
+                                            'optimizer': 'sgd',
+                                            'scheduler': 'step_warmup',
+                                            'weight_decay': 0.0005,
+                                            'step_milestones': [40, 70],
+                                            'step_gamma': 0.1,
+                                            'warmup_epoch': 10,
+                                            
+                                            'init': True,
+                                            'total_task': -1,
+                                            
+                                            'class_list': class_list,
+                                            "num_init_class": init_class,
+                                            "num_new_class": init_class
                                             },
-                                    'meta': {'task': 'init_imagenet_B500',
-                                            'mode': 'hyper-search'},
+                                    'meta': {'task': 'init_imagenet_B%d_seed%d' %(init_class, seed),
+                                            'mode': 'incremental-learning'},
                                     'network': 
                                             {'extractor_type': n_t},
                                     'data':
                                             {'data_type': data[0],
-                                            'num_class': data_num},
-                                    'index': '%s_ori/hyper-search/lr_%.3f' %(n_t, lr),
-                                    })
-                    
-                    
-                    
-                    
-    # 2. Init - Train
-    elif args.exp == 2:
-        pass
-    
+                                            'num_class': data[1],
+                                            'seed': seed},
+                                    'index': 'init/imagenet_B%d/%s_fc/seed%d' %(init_class, n_t, seed),
+                                    })    
+
     
     else:
         raise('Select Proper Experiment Number')

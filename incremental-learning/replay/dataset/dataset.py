@@ -70,15 +70,40 @@ def load_imagenet(option):
     return tr_dataset, val_dataset
 
 
+def load_imagenet100(option):
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+
+    resize= 224
+
+    tr_transform = transforms.Compose([
+        transforms.RandomResizedCrop(resize),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        normalize,
+    ])
+
+    val_transform = transforms.Compose([
+        transforms.Resize(int(resize * 256 / 224)),
+        transforms.CenterCrop(resize),
+        transforms.ToTensor(),
+        normalize,
+    ])
+
+    tr_dataset = torchvision.datasets.ImageFolder(os.path.join(option.result['data']['data_dir'], 'train'), transform=tr_transform)
+    val_dataset = torchvision.datasets.ImageFolder(os.path.join(option.result['data']['data_dir'], 'val'), transform=val_transform)
+    return tr_dataset, val_dataset
+
+
 def load_data(option, data_type='train'):
     if option.result['data']['data_type'] == 'imagenet':
         tr_d, val_d = load_imagenet(option)
+    elif option.result['data']['data_type'] == 'imagenet100':
+        tr_d, val_d = load_imagenet100(option)
     elif option.result['data']['data_type'] == 'cifar10':
         tr_d, val_d = load_cifar10(option)
-        
     elif option.result['data']['data_type'] == 'cifar100':
         tr_d, val_d = load_cifar100(option)
-        
     else:
         raise('select appropriate dataset')
 
@@ -122,7 +147,7 @@ class Base_Folder(Dataset):
 
 
 class IncrementalSet(Dataset):
-    def __init__(self, dataset, exemplar_list, start, target_list, shuffle_label=False, prop=1.):
+    def __init__(self, dataset, exemplar_list, old_class_num, target_list, train, shuffle_label=False, prop=1.):
         self.dataset = dataset
         self.dataset_label = np.array(self.dataset.targets)
         
@@ -141,8 +166,13 @@ class IncrementalSet(Dataset):
         
         # For Matching Class ID sequentially (0, 1, ... N)
         self.target_dict = {}
+        self.old_class_num = old_class_num
         for ix, target in enumerate(target_list):
-            self.target_dict[target] = start + ix
+            if train:
+                self.target_dict[target] = old_class_num + ix
+            else:
+                self.target_dict[target] = ix
+                
         
         # Exermplar Dataset
         self.exemplary = exemplar_list
@@ -165,11 +195,13 @@ class IncrementalSet(Dataset):
         if index < len(self.target_index):
             image, label = self.dataset.__getitem__(self.target_index[index])
             label = self.target_dict[label]
-            task = 0
         else:
             image, label = self.exemplary[index - len(self.target_index)]
-            task = 1
         
+        if label < self.old_class_num:
+            task = 0
+        else:
+            task = 1
         return image, label, task
     
     

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import timm
 import numpy as np
+from .resnet import resnet18, resnet34, resnet50, resnet101
 
 class Identity(nn.Module):
     def __init__(self):
@@ -34,10 +35,14 @@ class Init_Model(nn.Module):
     
     
     def set_extractor(self, task_id):
-        if self.option.result['network']['extractor_type'] == 'resnet34':
-            extractor = timm.create_model('resnet34', pretrained=False)
-            extractor.fc = Identity()
+        if self.option.result['network']['extractor_type'] == 'resnet18':
+            extractor = resnet18(dataset=self.option.result['data']['data_type'], start_class=task_id)
             self.num_embed = 512
+            
+        elif self.option.result['network']['extractor_type'] == 'resnet34':
+            extractor = resnet34(dataset=self.option.result['data']['data_type'], start_class=task_id)
+            self.num_embed = 512
+            
         else:
             raise('Select Proper Extractor Type')
         
@@ -124,12 +129,13 @@ class Incremental_Model(nn.Module):
     
     
     def set_extractor(self, task_id):
-        if self.option.result['network']['extractor_type'] == 'resnet34':
-            extractor = timm.create_model('resnet34', pretrained=False)
-            extractor.fc = Identity()
+        if self.option.result['network']['extractor_type'] == 'resnet18':
+            extractor = resnet18(dataset=self.option.result['data']['data_type'], start_class=task_id)
+        elif self.option.result['network']['extractor_type'] == 'resnet34':
+            extractor = resnet34(dataset=self.option.result['data']['data_type'], start_class=task_id)
         else:
             raise('Select Proper Extractor Type')
-        
+
         return extractor
     
     
@@ -166,7 +172,7 @@ class Incremental_Model(nn.Module):
             
             else:
                 out_list = []
-                for ix in range(self.current_task):
+                for ix in range(self.current_task + 1):
                     out_ix = getattr(self, 'classifier_%d' %ix)(feat)
                     out_list.append(out_ix)
                 return out_list, feat
@@ -178,9 +184,10 @@ class Incremental_Model(nn.Module):
                 feat = feat_list
                 out = self.classifier_0(feat)
                 return out, feat_list
+        
             else:
                 out_list = []
-                for ix in range(self.current_task):
+                for ix in range(self.current_task + 1):
                     out_ix = getattr(self, 'classifier_%d' %ix)(feat_list[ix])
                     out_list.append(out_ix)
                 return out_list, feat_list

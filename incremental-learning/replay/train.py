@@ -11,7 +11,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from module.trainer import init_trainer
+from module.trainer import init_trainer, osr_trainer
 from module.load_module import load_model, load_loss, load_optimizer, load_scheduler
 from utility.utils import config, train_module
 from utility.earlystop import EarlyStopping
@@ -154,12 +154,12 @@ def main(rank, option, resume, save_folder, log, master_port):
     
     # Start Class for New-task
     if multi_gpu:
-        start = model.module.old_class_tot
+        old_class_num = model.module.old_class_tot
     else:
-        start = model.old_class_tot
+        old_class_num = model.old_class_tot
     
-    tr_dataset = IncrementalSet(tr_dataset,  exemplar_list=exemplar_list, start=start, target_list=target_list, shuffle_label=True, prop=option.result['train']['train_prop'])
-    val_dataset = IncrementalSet(val_dataset, exemplar_list=[], start=start, target_list=whole_list, shuffle_label=False, prop=option.result['train']['val_prop'])
+    tr_dataset = IncrementalSet(tr_dataset,  exemplar_list=exemplar_list, old_class_num=old_class_num, target_list=target_list, train=True, shuffle_label=True, prop=option.result['train']['train_prop'])
+    val_dataset = IncrementalSet(val_dataset, exemplar_list=[], old_class_num=old_class_num, target_list=whole_list, train=False, shuffle_label=False, prop=option.result['train']['val_prop'])
 
 
     # Data Loader
@@ -206,6 +206,8 @@ def main(rank, option, resume, save_folder, log, master_port):
     
     
     # Run
+    inclearn_method = option.result['train']['inclearn_method']
+        
     for epoch in range(save_module.init_epoch, save_module.total_epoch):
         # Scheduler with Warm-up
         if scheduler is not None:
@@ -220,15 +222,31 @@ def main(rank, option, resume, save_folder, log, master_port):
 
 
         # Train
-        save_module = init_trainer.train(option, rank, epoch, model, criterion, optimizer, multi_gpu, \
-                                          tr_loader, scaler, save_module, run, save_folder)
-        
-        if save_module == 0:
-            result = None
-            break
-        
-        # Evaluation
-        result = init_trainer.validation(option, rank, epoch, model, criterion, multi_gpu, val_loader, scaler, run)
+        if option.result['train']['current_task'] == 0:
+            save_module = init_trainer.train(option, rank, epoch, model, criterion, optimizer, multi_gpu, \
+                                            tr_loader, scaler, save_module, run, save_folder)
+            
+            if save_module == 0:
+                result = None
+                break
+            
+            # Evaluation
+            result = init_trainer.validation(option, rank, epoch, model, criterion, multi_gpu, val_loader, scaler, run)
+            
+        else:
+            if inclearn_method in ['entropy', 'mls', 'msp']:
+                save_module = osr_trainer.train(option, rank, epoch, model, criterion, optimizer, multi_gpu, \
+                                                tr_loader, scaler, save_module, run, save_folder)
+                
+                if save_module == 0:
+                    result = None
+                    break
+                
+                # Evaluation
+                result = osr_trainer.validation(option, rank, epoch, model, criterion, multi_gpu, val_loader, scaler, run)                
+            
+            else:
+                raise('Select Proper Inclearn Method')
             
             
         # Log Learning Rate
@@ -284,7 +302,7 @@ def main(rank, option, resume, save_folder, log, master_port):
 
 if __name__=='__main__':
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--save_dir', type=str, default='/data/sung/checkpoint')
+    parser.add_argument('--save_dir', type=str, default='/data/sung/checkpoint/inclearn/cifar100_B5_C5/mls/resnet18_fc/seed11')
     parser.add_argument('--log', type=lambda x: x.lower()=='true', default=False)
     args = parser.parse_args()
 
@@ -331,10 +349,6 @@ if __name__=='__main__':
         option.result['data']['data_dir'] = os.path.join(option.result['data']['data_dir'], option.result['data']['data_type'])
 
 
-    # Num Class
-    option.result['data']['num_class'] = option.result['train']['num_init_class'] + (option.result['train']['num_new_class'] * option.result['train']['current_task'])
-
-
     # GPU
     num_gpu = len(option.result['train']['gpu'].split(','))
     option.result['train']['gpu'] = ','.join([str(ix) for ix in range(num_gpu)])
@@ -347,10 +361,43 @@ if __name__=='__main__':
 
     master_port = str(random.randint(1,1000))
 
-
-    if ddp:
-        mp.spawn(main, args=(option, resume, save_folder, args.log, master_port, ), nprocs=num_gpu, join=True)
+    
+    if option.result['train']['init']:
+        option.result['train']['current_task'] = 0
+        
+        new_class = option.result['train']['num_init_class']
+        
+        option.result['train']['target_list'] = option.result['train']['class_list'][:new_class]
+        option.result['train']['whole_class_list'] = option.result['train']['class_list'][:new_class]
+        
+        if ddp:
+            mp.spawn(main, args=(option, resume, save_folder, args.log, master_port, ), nprocs=num_gpu, join=True)
+        else:
+            main('cuda', option, resume, save_folder, args.log, master_port)
+        
+        
     else:
-        main('cuda', option, resume, save_folder, args.log, master_port)
+        for ix in range(1, option.result['train']['total_task']):
+            option.result['train']['current_task'] = ix
+            
+            old_class = option.result['train']['num_init_class'] + option.result['train']['num_new_class'] * (ix - 1)
+            new_class = old_class + option.result['train']['num_new_class']
+            
+            option.result['train']['target_list'] = option.result['train']['class_list'][old_class:new_class]
+            option.result['train']['whole_class_list'] = option.result['train']['class_list'][:new_class]
+            
+            # Update init path
+            if ix > 1:
+                option.result['train']['init_path'] = os.path.join(save_folder, 'task%d' %(ix-1), 'best_model.pt')
+            
+            # Update the Save Dir Path
+            option.result['train']['save_folder'] = os.path.join(save_folder, 'task%d' %ix)
+            os.makedirs(option.result['train']['save_folder'], exist_ok=True)
+            
+            if ddp:
+                mp.spawn(main, args=(option, resume, option.result['train']['save_folder'], args.log, master_port, ), nprocs=num_gpu, join=True)
+            else:
+                main('cuda', option, resume, option.result['train']['save_folder'], args.log, master_port)
+                
         
     exit()

@@ -4,6 +4,8 @@
 
   "total_epoch": 100,
   "scheduler": "step",
+  "step_milestones": [],
+  "step_gamma": 0.1,
   "batch_size": 128,
 
   "ddp": true,
@@ -15,20 +17,27 @@
   "val_prop" : 1.0,
 
   "patience": 1000,
-  "early_loss": true,
+  "early_loss": false,
   "save_epoch": 10,
 
   "optimizer": "sgd",
   "lr": 0.1,
   "weight_decay": 1e-4,
+  "warmup_epoch": 0,
 
-  "target_list": null,
+  "class_list": [],
+  "target_list": [],
   "whole_class_list": [],
   
+  "init": true,
+  "init_path": "",
+  "total_task": 10,
   "current_task": 0,
   "num_init_class": 500,
   "num_new_class": 100,
 
+  "inclearn_method": "base",
+  
   "common_extractor": false,
   "common_classifier": false,
   

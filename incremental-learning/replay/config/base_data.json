@@ -1,5 +1,6 @@
 {
   "data_type": "cifar10",
   "data_dir": "./data",
-  "num_class": 10
+  "num_class": 10,
+  "seed": 0
 }

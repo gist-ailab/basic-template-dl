@@ -114,7 +114,7 @@ def train(option, rank, epoch, model, criterion, optimizer, multi_gpu, tr_loader
         
         # Save
         if epoch % option.result['train']['save_epoch'] == 0:
-            torch.save({'model':model_param}, os.path.join(save_folder, 'epoch%d_model.pt' %epoch))
+            torch.save(model_param, os.path.join(save_folder, 'epoch%d_model.pt' %epoch))
 
     if multi_gpu and option.result['train']['ddp']:
         dist.barrier()
